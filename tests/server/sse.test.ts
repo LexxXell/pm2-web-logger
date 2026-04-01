@@ -15,10 +15,12 @@ afterEach(async () => {
 });
 
 describe('SSE stream', () => {
-  it('streams new lines to connected clients', async () => {
+  it('streams merged out and error lines to connected clients', async () => {
     tempDir = await createTempDir();
-    const filePath = path.join(tempDir, 'strapi-error.log');
-    await writeFile(filePath, 'bootstrap\n', 'utf8');
+    const errorFilePath = path.join(tempDir, 'strapi-error.log');
+    const outFilePath = path.join(tempDir, 'strapi-out.log');
+    await writeFile(errorFilePath, 'bootstrap err\n', 'utf8');
+    await writeFile(outFilePath, 'bootstrap out\n', 'utf8');
 
     const context = await createTestContext(
       createTestConfig(tempDir, {
@@ -31,7 +33,7 @@ describe('SSE stream', () => {
     try {
       const response = await context.server.inject({
         method: 'GET',
-        url: '/api/logs/stream?app=strapi&stream=error',
+        url: '/api/logs/stream?app=strapi&stream=all',
         payloadAsStream: true
       });
 
@@ -43,13 +45,18 @@ describe('SSE stream', () => {
 
       await waitFor(() => responseBody.includes('event: ready'));
 
-      await appendFile(filePath, 'runtime failure\n', 'utf8');
+      await appendFile(errorFilePath, 'runtime failure\n', 'utf8');
+      await appendFile(outFilePath, 'server started\n', 'utf8');
 
       await waitFor(() => responseBody.includes('"line":"runtime failure"'));
+      await waitFor(() => responseBody.includes('"line":"server started"'));
 
       expect(responseBody).toContain('event: log');
+      expect(responseBody).toContain('"stream":"all"');
       expect(responseBody).toContain('"stream":"error"');
+      expect(responseBody).toContain('"stream":"out"');
       expect(responseBody).toContain('"line":"runtime failure"');
+      expect(responseBody).toContain('"line":"server started"');
 
       response.raw.res.destroy();
       stream.destroy();

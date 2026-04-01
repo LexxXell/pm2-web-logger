@@ -128,8 +128,8 @@ If `BASE_PATH=/`, the default routes are:
 
 - `GET /health`
 - `GET /api/sources`
-- `GET /api/logs?app=<name>&stream=out|error&limit=<n>`
-- `GET /api/logs/stream?app=<name>&stream=out|error`
+- `GET /api/logs?app=<name>&stream=out|error|all&limit=<n>`
+- `GET /api/logs/stream?app=<name>&stream=out|error|all`
 
 If `BASE_PATH=/_logs`, the same routes become:
 
@@ -161,11 +161,18 @@ curl -H "Authorization: Bearer change_me" \
 
 ### `GET /api/logs`
 
-Returns the latest buffered lines for a single source.
+Returns the latest buffered lines for a single source, or for both streams together when `stream=all`.
 
 ```bash
 curl -H "Authorization: Bearer change_me" \
   "http://127.0.0.1:3710/api/logs?app=strapi&stream=out&limit=100"
+```
+
+Merged console view:
+
+```bash
+curl -H "Authorization: Bearer change_me" \
+  "http://127.0.0.1:3710/api/logs?app=strapi&stream=all&limit=100"
 ```
 
 Example response:
@@ -179,7 +186,8 @@ Example response:
     {
       "line": "Starting application...",
       "timestamp": "2026-04-01T12:00:00.000Z",
-      "truncated": false
+      "truncated": false,
+      "stream": "out"
     }
   ]
 }
@@ -187,11 +195,18 @@ Example response:
 
 ### `GET /api/logs/stream`
 
-Streams new log lines over SSE.
+Streams new log lines over SSE. Use `stream=all` when one web console should receive both `out` and `error`.
 
 ```bash
 curl -N -H "Authorization: Bearer change_me" \
   "http://127.0.0.1:3710/api/logs/stream?app=strapi&stream=error"
+```
+
+Merged console stream:
+
+```bash
+curl -N -H "Authorization: Bearer change_me" \
+  "http://127.0.0.1:3710/api/logs/stream?app=strapi&stream=all"
 ```
 
 SSE events:

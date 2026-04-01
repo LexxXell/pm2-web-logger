@@ -2,15 +2,16 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 
 import type { AppConfig } from '../config/env.js';
+import type { LogSource } from '../logs/log-source.js';
 import { serviceVersion } from '../version.js';
 import type { SourceManager } from '../logs/source-manager.js';
-import type { LogStream } from '../types/logs.js';
+import type { LogResponseEntry, LogStreamSelector } from '../types/logs.js';
 import { HttpError } from '../utils/http-error.js';
 import type { Logger } from '../utils/logger.js';
 import { assertBearerAuth } from './auth.js';
 import { formatSseEvent, writeSseChunk } from './sse.js';
 
-const streamSchema = z.enum(['out', 'error']);
+const streamSchema = z.enum(['out', 'error', 'all']);
 
 const buildLogsQuerySchema = (maxHttpLimit: number) =>
   z.object({
@@ -39,14 +40,61 @@ const parseSchema = <T>(
   throw new HttpError(400, 'VALIDATION_ERROR', `${message}: ${z.prettifyError(result.error)}`);
 };
 
-const getSourceOrThrow = (sourceManager: SourceManager, app: string, stream: LogStream) => {
+const getSourcesOrThrow = (
+  sourceManager: SourceManager,
+  app: string,
+  stream: LogStreamSelector
+): LogSource[] => {
+  if (stream === 'all') {
+    const outSource = sourceManager.getSource(app, 'out');
+    const errorSource = sourceManager.getSource(app, 'error');
+
+    if (!outSource || !errorSource) {
+      throw new HttpError(404, 'SOURCE_NOT_FOUND', `Unknown app "${app}"`);
+    }
+
+    return [outSource, errorSource];
+  }
+
   const source = sourceManager.getSource(app, stream);
 
   if (!source) {
     throw new HttpError(404, 'SOURCE_NOT_FOUND', `Unknown source "${app}:${stream}"`);
   }
 
-  return source;
+  return [source];
+};
+
+const getSnapshotResponseLines = (sources: LogSource[], limit: number): LogResponseEntry[] => {
+  const merged = sources.flatMap((source, sourceIndex) =>
+    source.getSnapshot(limit).map((entry, entryIndex) => ({
+      ...entry,
+      stream: source.stream,
+      sourceIndex,
+      entryIndex
+    }))
+  );
+
+  merged.sort((left, right) => {
+    const timestampOrder = left.timestamp.localeCompare(right.timestamp);
+
+    if (timestampOrder !== 0) {
+      return timestampOrder;
+    }
+
+    if (left.sourceIndex !== right.sourceIndex) {
+      return left.sourceIndex - right.sourceIndex;
+    }
+
+    return left.entryIndex - right.entryIndex;
+  });
+
+  return merged.slice(-limit).map((entry) => ({
+    line: entry.line,
+    timestamp: entry.timestamp,
+    truncated: entry.truncated,
+    stream: entry.stream
+  }));
 };
 
 const setSseHeaders = (reply: FastifyReply): void => {
@@ -92,26 +140,27 @@ export const registerRoutes = async (
           'Invalid logs query'
         );
 
-        const source = getSourceOrThrow(sourceManager, query.app, query.stream);
+        const sources = getSourcesOrThrow(sourceManager, query.app, query.stream);
         const limit = query.limit ?? config.bufferSize;
 
         return {
           app: query.app,
           stream: query.stream,
           limit,
-          lines: source.getSnapshot(limit)
+          lines: getSnapshotResponseLines(sources, limit)
         };
       });
 
       apiServer.get('/logs/stream', (request, reply) => {
         const query = parseSchema(buildStreamQuerySchema(), request.query, 'Invalid stream query');
-        const source = getSourceOrThrow(sourceManager, query.app, query.stream);
+        const sources = getSourcesOrThrow(sourceManager, query.app, query.stream);
 
         reply.hijack();
         setSseHeaders(reply);
         reply.raw.flushHeaders?.();
 
         let closed = false;
+        const unsubscribers: Array<() => void> = [];
 
         const closeConnection = (): void => {
           if (closed) {
@@ -119,7 +168,9 @@ export const registerRoutes = async (
           }
 
           closed = true;
-          unsubscribe();
+          for (const unsubscribe of unsubscribers) {
+            unsubscribe();
+          }
           clearInterval(heartbeatTimer);
 
           if (!reply.raw.writableEnded) {
@@ -144,9 +195,13 @@ export const registerRoutes = async (
           }
         };
 
-        const unsubscribe = source.subscribe((event) => {
-          writeOrClose(formatSseEvent('log', event));
-        });
+        for (const source of sources) {
+          unsubscribers.push(
+            source.subscribe((event) => {
+              writeOrClose(formatSseEvent('log', event));
+            })
+          );
+        }
 
         const heartbeatTimer = setInterval(() => {
           writeOrClose(': heartbeat\n\n');

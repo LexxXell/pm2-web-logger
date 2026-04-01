@@ -8,7 +8,9 @@ export { serviceName, serviceVersion } from './version.js';
 export type {
   LogEntry,
   LogEvent,
+  LogResponseEntry,
   LogStream,
+  LogStreamSelector,
   ParsedLine,
   SourceState,
   SourceStatus

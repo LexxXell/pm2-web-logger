@@ -1,4 +1,5 @@
 export type LogStream = 'out' | 'error';
+export type LogStreamSelector = LogStream | 'all';
 
 export interface LogEntry {
   line: string;
@@ -8,6 +9,10 @@ export interface LogEntry {
 
 export interface LogEvent extends LogEntry {
   app: string;
+  stream: LogStream;
+}
+
+export interface LogResponseEntry extends LogEntry {
   stream: LogStream;
 }
 
