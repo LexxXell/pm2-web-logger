@@ -1,0 +1,11 @@
+services:
+  pm2-web-logger:
+    build: .
+    container_name: pm2-web-logger
+    env_file:
+      - .env
+    ports:
+      - "3710:3710"
+    volumes:
+      - /home/deploy/.pm2/logs:/home/deploy/.pm2/logs:ro
+    restart: unless-stopped
