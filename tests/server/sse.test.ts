@@ -15,6 +15,39 @@ afterEach(async () => {
 });
 
 describe('SSE stream', () => {
+  it('returns cors headers for allowed origin', async () => {
+    tempDir = await createTempDir();
+    const outFilePath = path.join(tempDir, 'strapi-out.log');
+    await writeFile(outFilePath, 'bootstrap out\n', 'utf8');
+
+    const context = await createTestContext(
+      createTestConfig(tempDir, {
+        apps: ['strapi'],
+        enableCors: true,
+        corsOrigins: ['http://127.0.0.1:5500']
+      })
+    );
+
+    try {
+      const response = await context.server.inject({
+        method: 'GET',
+        url: '/api/logs/stream?app=strapi&stream=out',
+        payloadAsStream: true,
+        headers: {
+          origin: 'http://127.0.0.1:5500'
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5500');
+
+      response.raw.res.destroy();
+      response.stream().destroy();
+    } finally {
+      await context.close();
+    }
+  });
+
   it('streams merged out and error lines to connected clients', async () => {
     tempDir = await createTempDir();
     const errorFilePath = path.join(tempDir, 'strapi-error.log');

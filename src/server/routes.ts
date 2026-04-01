@@ -104,6 +104,28 @@ const setSseHeaders = (reply: FastifyReply): void => {
   reply.raw.setHeader('X-Accel-Buffering', 'no');
 };
 
+const setSseCorsHeaders = (
+  reply: FastifyReply,
+  requestOrigin: string | undefined,
+  allowedOrigins: string[] | undefined
+): void => {
+  if (!requestOrigin || !allowedOrigins || allowedOrigins.length === 0) {
+    return;
+  }
+
+  if (allowedOrigins.includes('*')) {
+    reply.raw.setHeader('Access-Control-Allow-Origin', '*');
+    return;
+  }
+
+  if (!allowedOrigins.includes(requestOrigin)) {
+    return;
+  }
+
+  reply.raw.setHeader('Access-Control-Allow-Origin', requestOrigin);
+  reply.raw.setHeader('Vary', 'Origin');
+};
+
 export const registerRoutes = async (
   server: FastifyInstance,
   config: AppConfig,
@@ -157,6 +179,7 @@ export const registerRoutes = async (
 
         reply.hijack();
         setSseHeaders(reply);
+        setSseCorsHeaders(reply, request.headers.origin, config.corsOrigins);
         reply.raw.flushHeaders?.();
 
         let closed = false;

@@ -58,6 +58,64 @@ const basePathSchema = z
       : normalized;
   });
 
+const corsOriginsSchema = z
+  .string()
+  .trim()
+  .default('')
+  .transform((value, ctx) => {
+    if (value.length === 0) {
+      return [];
+    }
+
+    const normalizedOrigins: string[] = [];
+    const seenOrigins = new Set<string>();
+
+    for (const rawOrigin of value.split(',')) {
+      const origin = rawOrigin.trim();
+
+      if (origin.length === 0) {
+        continue;
+      }
+
+      let normalizedOrigin: string;
+
+      if (origin === '*') {
+        normalizedOrigin = '*';
+      } else {
+        try {
+          const parsedUrl = new URL(origin);
+
+          if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+            throw new Error('Origin must use http or https');
+          }
+
+          const allowedForms = new Set([parsedUrl.origin, `${parsedUrl.origin}/`]);
+
+          if (!allowedForms.has(origin)) {
+            throw new Error('Origin must not include a path, query, or hash');
+          }
+
+          normalizedOrigin = parsedUrl.origin;
+        } catch {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Invalid CORS origin "${origin}"`,
+            path: ['CORS_ORIGIN']
+          });
+
+          return z.NEVER;
+        }
+      }
+
+      if (!seenOrigins.has(normalizedOrigin)) {
+        seenOrigins.add(normalizedOrigin);
+        normalizedOrigins.push(normalizedOrigin);
+      }
+    }
+
+    return normalizedOrigins;
+  });
+
 const rawEnvSchema = z
   .object({
     PORT: integerString('PORT').default(3710).pipe(z.number().int().min(1).max(65535)),
@@ -83,7 +141,7 @@ const rawEnvSchema = z
       .default(15000)
       .pipe(z.number().int().min(1000).max(120000)),
     ENABLE_CORS: booleanString.default(false),
-    CORS_ORIGIN: z.string().trim().default(''),
+    CORS_ORIGIN: corsOriginsSchema,
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     AUTH_TOKEN: z.string().trim().default(''),
     BASE_PATH: basePathSchema
@@ -105,7 +163,7 @@ const rawEnvSchema = z
       maxLineLength: value.MAX_LINE_LENGTH,
       sseHeartbeatMs: value.SSE_HEARTBEAT_MS,
       enableCors: value.ENABLE_CORS,
-      corsOrigin: value.CORS_ORIGIN,
+      corsOrigins: value.CORS_ORIGIN,
       logLevel: value.LOG_LEVEL,
       authToken: value.AUTH_TOKEN,
       basePath: value.BASE_PATH
@@ -150,10 +208,10 @@ const rawEnvSchema = z
       });
     }
 
-    if (value.enableCors && value.corsOrigin.length === 0) {
+    if (value.enableCors && value.corsOrigins.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'CORS_ORIGIN is required when ENABLE_CORS=true',
+        message: 'CORS_ORIGIN must contain at least one origin when ENABLE_CORS=true',
         path: ['CORS_ORIGIN']
       });
     }
@@ -171,7 +229,7 @@ export interface AppConfig {
   maxLineLength: number;
   sseHeartbeatMs: number;
   enableCors: boolean;
-  corsOrigin: string | undefined;
+  corsOrigins: string[] | undefined;
   logLevel: LogLevel;
   authToken: string | undefined;
   basePath: string;
@@ -182,7 +240,7 @@ export const parseEnv = (env: NodeJS.ProcessEnv): AppConfig => {
 
   return {
     ...parsed,
-    corsOrigin: parsed.corsOrigin || undefined,
+    corsOrigins: parsed.corsOrigins.length > 0 ? parsed.corsOrigins : undefined,
     authToken: parsed.authToken || undefined
   };
 };
@@ -200,7 +258,7 @@ export const getRedactedConfigSummary = (config: AppConfig): Record<string, unkn
   maxLineLength: config.maxLineLength,
   sseHeartbeatMs: config.sseHeartbeatMs,
   enableCors: config.enableCors,
-  corsOrigin: config.corsOrigin,
+  corsOrigins: config.corsOrigins,
   logLevel: config.logLevel,
   authEnabled: Boolean(config.authToken)
 });

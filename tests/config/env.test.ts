@@ -28,6 +28,20 @@ describe('parseEnv', () => {
     expect(config.apps).toEqual(['strapi', 'worker']);
     expect(config.basePath).toBe('/_logs');
     expect(config.authToken).toBe('secret');
+    expect(config.corsOrigins).toBeUndefined();
+  });
+
+  it('parses multiple cors origins', () => {
+    const config = parseEnv({
+      ...baseEnv,
+      ENABLE_CORS: 'true',
+      CORS_ORIGIN: 'http://127.0.0.1:5500, https://logs.example.com/, http://127.0.0.1:5500'
+    });
+
+    expect(config.corsOrigins).toEqual([
+      'http://127.0.0.1:5500',
+      'https://logs.example.com'
+    ]);
   });
 
   it('rejects invalid app names', () => {
@@ -55,6 +69,16 @@ describe('parseEnv', () => {
         ...baseEnv,
         ENABLE_CORS: 'true',
         CORS_ORIGIN: ''
+      })
+    ).toThrow(ZodError);
+  });
+
+  it('rejects invalid cors origins', () => {
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        ENABLE_CORS: 'true',
+        CORS_ORIGIN: 'http://127.0.0.1:5500/path'
       })
     ).toThrow(ZodError);
   });

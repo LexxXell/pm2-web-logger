@@ -1,6 +1,6 @@
 # pm2-web-logger
 
-`pm2-web-logger` is a lightweight HTTP and SSE service for exposing PM2 log files without adding a database, Redis, Loki, or a browser UI.
+`pm2-web-logger` is a lightweight HTTP and SSE service for exposing PM2 log files without adding a database, Redis, Loki, or a required browser UI.
 
 It reads PM2 log files from `.pm2/logs`, keeps only the latest `N` lines in memory per source, returns snapshots over HTTP, and streams new lines via Server-Sent Events.
 
@@ -50,6 +50,13 @@ CORS_ORIGIN=
 LOG_LEVEL=info
 AUTH_TOKEN=change_me
 BASE_PATH=/
+```
+
+For multiple web-console origins:
+
+```env
+ENABLE_CORS=true
+CORS_ORIGIN=http://127.0.0.1:5500,http://localhost:5500,https://logs.example.com
 ```
 
 Build and run in production:
@@ -115,7 +122,7 @@ All runtime settings come from `.env`.
 | `MAX_LINE_LENGTH` | no | `16384` | Safety limit for a single line before truncation |
 | `SSE_HEARTBEAT_MS` | no | `15000` | Heartbeat interval for SSE clients |
 | `ENABLE_CORS` | no | `false` | Enable CORS support |
-| `CORS_ORIGIN` | conditional | empty | Allowed origin when `ENABLE_CORS=true` |
+| `CORS_ORIGIN` | conditional | empty | Allowed origin list when `ENABLE_CORS=true`, comma-separated |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, or `error` |
 | `AUTH_TOKEN` | no | empty | Bearer token required for `/api/*` when set |
 | `BASE_PATH` | no | `/` | Prefix for all routes, for example `/_logs` |
@@ -193,6 +200,29 @@ Example response:
 }
 ```
 
+### HTML Console Example
+
+A standalone browser example is available at [`examples/web-console.html`](./examples/web-console.html).
+
+It includes:
+
+- `IP / Domain`
+- `Stream Name`
+- `Stream Filter`
+- optional bearer token
+- a live log console
+
+The page first loads the latest buffered lines from `GET /api/logs` and then keeps the console live via `GET /api/logs/stream`.
+
+Usage:
+
+1. Open the file in a browser, or serve it as a static page.
+2. Enter the server URL, app name, and `out`, `error`, or `all`.
+3. If `AUTH_TOKEN` is enabled, enter the bearer token.
+4. Click `Connect`.
+
+If the HTML page is hosted on a different origin, enable CORS on `pm2-web-logger`. If the page is opened over `https://`, the API should also be exposed over `https://`, usually through a reverse proxy in front of `pm2-web-logger`.
+
 ### `GET /api/logs/stream`
 
 Streams new log lines over SSE. Use `stream=all` when one web console should receive both `out` and `error`.
@@ -232,7 +262,7 @@ Example `log` payload:
 Example PM2 app:
 
 ```bash
-pm2 start dist/server.js --name strapi
+pm2 start dist/cli.js --name strapi
 ```
 
 Example PM2 log files:

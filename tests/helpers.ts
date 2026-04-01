@@ -49,7 +49,7 @@ export const createTestConfig = (
   maxLineLength: 1024,
   sseHeartbeatMs: 250,
   enableCors: false,
-  corsOrigin: undefined,
+  corsOrigins: undefined,
   logLevel: 'error',
   authToken: undefined,
   basePath: '/',

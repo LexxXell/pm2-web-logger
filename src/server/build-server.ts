@@ -58,12 +58,12 @@ export const buildServer = async (
   );
 
   if (config.enableCors) {
-    if (!config.corsOrigin) {
+    if (!config.corsOrigins || config.corsOrigins.length === 0) {
       throw new Error('CORS_ORIGIN must be configured when CORS is enabled');
     }
 
     await server.register(cors, {
-      origin: config.corsOrigin
+      origin: config.corsOrigins
     });
   }
 
